@@ -10,7 +10,7 @@ Second bot in a sales-ops automation portfolio, alongside
 that one is a simple, deterministic approval loop, this is a conversational,
 tool-using agent.
 
-> **Status:** in development. See [`PRD.md`](./PRD.md) for the full design.
+> **Status:** in development. See the [PRD (issue #1)](https://github.com/kyokosawada/gemini-slack-assistant/issues/1) for the full design.
 
 ## How it works
 
@@ -34,4 +34,4 @@ tool-using agent.
 - Gmail: `search_emails`, `read_email`, `send_email` *(confirm)*
 - Calendar: `list_events`, `find_free_time`, `create_event` *(confirm)*
 
-See [`PRD.md`](./PRD.md) for permissions, setup, and architecture rationale.
+See the [PRD (issue #1)](https://github.com/kyokosawada/gemini-slack-assistant/issues/1) for permissions, setup, and architecture rationale.
