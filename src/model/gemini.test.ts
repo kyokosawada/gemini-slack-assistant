@@ -1,6 +1,15 @@
 import { describe, it, expect } from "bun:test";
-import { toContent, toModelReply } from "./gemini";
+import { toContent, toModelReply, dateContext } from "./gemini";
 import type { Message } from "./provider";
+
+describe("dateContext (grounding the model in 'now')", () => {
+  it("states the current date and weekday so relative dates resolve", () => {
+    const ctx = dateContext(new Date("2026-06-28T09:30:00Z")); // a Sunday
+
+    expect(ctx).toContain("2026-06-28");
+    expect(ctx).toContain("Sunday");
+  });
+});
 
 describe("toContent (conversation → Gemini contents)", () => {
   it("maps a user turn to a user text part", () => {

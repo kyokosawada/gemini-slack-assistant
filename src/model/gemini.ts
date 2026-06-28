@@ -1,5 +1,21 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, type GenerateContentConfig } from "@google/genai";
 import type { Message, ModelProvider, ModelReply, ToolDefinition } from "./provider";
+
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/**
+ * A short system instruction grounding the model in the current date/time (UTC),
+ * so it can resolve relative dates like "today", "tomorrow", or "Thursday" into
+ * the concrete dates and RFC3339 timestamps the Gmail/Calendar tools require.
+ */
+export function dateContext(now: Date): string {
+  const iso = now.toISOString();
+  return (
+    `Today is ${WEEKDAYS[now.getUTCDay()]}, ${iso.slice(0, 10)} (UTC); the current time is ${iso}. ` +
+    `Resolve relative dates ("today", "tomorrow", weekday names) against this, and pass concrete ` +
+    `dates / RFC3339 timestamps to the calendar and email tools — never ask the user for the date.`
+  );
+}
 
 /** Default Gemini model — free-tier flash. Override via the optional arg. */
 const DEFAULT_MODEL = "gemini-2.5-flash";
@@ -23,10 +39,12 @@ export function createGeminiProvider(
     async generate(conversation: Message[], tools: ToolDefinition[]): Promise<ModelReply> {
       const contents = conversation.map(toContent);
 
-      const config =
-        tools.length > 0
-          ? { tools: [{ functionDeclarations: tools.map(toFunctionDeclaration) }] }
-          : undefined;
+      // Ground the model in the current date so it can resolve "today",
+      // "tomorrow", weekday names, etc. into the concrete dates the tools need.
+      const config: GenerateContentConfig = { systemInstruction: dateContext(new Date()) };
+      if (tools.length > 0) {
+        config.tools = [{ functionDeclarations: tools.map(toFunctionDeclaration) }];
+      }
 
       const response = await ai.models.generateContent({ model, contents, config });
       return toModelReply(response);
