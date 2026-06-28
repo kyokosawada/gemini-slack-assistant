@@ -1,0 +1,20 @@
+{
+  "name": "gemini-slack-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Slack AI personal assistant — conversational, tool-using agent over Gmail and Calendar.",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun --watch run src/index.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@slack/bolt": "^4.7.3"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}
