@@ -29,16 +29,27 @@ export function createGeminiProvider(
           : undefined;
 
       const response = await ai.models.generateContent({ model, contents, config });
-
-      const calls = response.functionCalls;
-      if (calls && calls.length > 0) {
-        const call = calls[0]!;
-        return { kind: "tool_call", call: { name: call.name ?? "", args: call.args ?? {} } };
-      }
-
-      return { kind: "text", text: response.text ?? "" };
+      return toModelReply(response);
     },
   };
+}
+
+/**
+ * Map a Gemini response to our {@link ModelReply}: a predicted function call
+ * surfaces as a `tool_call` (taking the first call), otherwise the text answer
+ * is returned. Pure, so the wire-format contract is unit-testable without a
+ * network round-trip.
+ */
+export function toModelReply(response: {
+  functionCalls?: Array<{ name?: string | null; args?: Record<string, unknown> }> | null;
+  text?: string | null;
+}): ModelReply {
+  const calls = response.functionCalls;
+  if (calls && calls.length > 0) {
+    const call = calls[0]!;
+    return { kind: "tool_call", call: { name: call.name ?? "", args: call.args ?? {} } };
+  }
+  return { kind: "text", text: response.text ?? "" };
 }
 
 function toFunctionDeclaration(tool: ToolDefinition) {
@@ -55,7 +66,7 @@ function toFunctionDeclaration(tool: ToolDefinition) {
  * model turn; a `tool_result` becomes a `functionResponse` part on a user turn
  * (the SDK reads the tool output from the `output` key).
  */
-function toContent(m: Message) {
+export function toContent(m: Message) {
   switch (m.role) {
     case "user":
       return { role: "user", parts: [{ text: m.text }] };
