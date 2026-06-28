@@ -3,6 +3,10 @@ import { requireEnv } from "./env";
 import { handleIncomingMessage } from "./slack/messageHandler";
 import { createAgentLoop } from "./agent/agentLoop";
 import { createGeminiProvider } from "./model/gemini";
+import { loadAuthorizedClient } from "./google/auth";
+import { createGmailApi } from "./google/gmailApi";
+import { createToolRegistry } from "./tools/registry";
+import { searchEmailsTool, readEmailTool } from "./tools/gmail";
 
 /**
  * Entry point (issue #3): a single always-on local process that connects to
@@ -12,7 +16,13 @@ import { createGeminiProvider } from "./model/gemini";
  * each Slack surface to a stable thread key.
  */
 const provider = createGeminiProvider(requireEnv("GEMINI_API_KEY"));
-const agent = createAgentLoop(provider);
+
+// Gmail read tools, authorized via the cached OAuth token (run `bun run
+// authorize` first to mint token.json). The model can request these; the
+// registry executes them and the loop feeds results back for summarizing.
+const gmail = createGmailApi(loadAuthorizedClient());
+const registry = createToolRegistry([searchEmailsTool(gmail), readEmailTool(gmail)]);
+const agent = createAgentLoop(provider, registry);
 
 const app = new App({
   token: requireEnv("SLACK_BOT_TOKEN"),

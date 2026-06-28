@@ -21,10 +21,7 @@ export function createGeminiProvider(
   return {
     name: `gemini:${model}`,
     async generate(conversation: Message[], tools: ToolDefinition[]): Promise<ModelReply> {
-      const contents = conversation.map((m) => ({
-        role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: m.text }],
-      }));
+      const contents = conversation.map(toContent);
 
       const config =
         tools.length > 0
@@ -50,4 +47,26 @@ function toFunctionDeclaration(tool: ToolDefinition) {
     description: tool.description,
     parametersJsonSchema: tool.parameters,
   };
+}
+
+/**
+ * Map one of our conversation turns to a Gemini `Content`. Our `assistant`
+ * becomes Gemini's `model`; a `tool_call` becomes a `functionCall` part on a
+ * model turn; a `tool_result` becomes a `functionResponse` part on a user turn
+ * (the SDK reads the tool output from the `output` key).
+ */
+function toContent(m: Message) {
+  switch (m.role) {
+    case "user":
+      return { role: "user", parts: [{ text: m.text }] };
+    case "assistant":
+      return { role: "model", parts: [{ text: m.text }] };
+    case "tool_call":
+      return { role: "model", parts: [{ functionCall: { name: m.call.name, args: m.call.args } }] };
+    case "tool_result":
+      return {
+        role: "user",
+        parts: [{ functionResponse: { name: m.name, response: { output: m.result } } }],
+      };
+  }
 }

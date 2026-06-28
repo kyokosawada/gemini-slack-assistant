@@ -7,12 +7,14 @@
   "scripts": {
     "start": "bun run src/index.ts",
     "dev": "bun --watch run src/index.ts",
+    "authorize": "bun run src/google/authorize.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@google/genai": "^2.10.0",
-    "@slack/bolt": "^4.7.3"
+    "@slack/bolt": "^4.7.3",
+    "googleapis": "^173.0.0"
   },
   "devDependencies": {
     "@types/bun": "latest",
