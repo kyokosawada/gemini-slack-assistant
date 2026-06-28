@@ -5,8 +5,10 @@ import { createAgentLoop } from "./agent/agentLoop";
 import { createGeminiProvider } from "./model/gemini";
 import { loadAuthorizedClient } from "./google/auth";
 import { createGmailApi } from "./google/gmailApi";
+import { createCalendarApi } from "./google/calendarApi";
 import { createToolRegistry } from "./tools/registry";
 import { searchEmailsTool, readEmailTool } from "./tools/gmail";
+import { listEventsTool, findFreeTimeTool } from "./tools/calendar";
 
 /**
  * Entry point (issue #3): a single always-on local process that connects to
@@ -17,11 +19,18 @@ import { searchEmailsTool, readEmailTool } from "./tools/gmail";
  */
 const provider = createGeminiProvider(requireEnv("GEMINI_API_KEY"));
 
-// Gmail read tools, authorized via the cached OAuth token (run `bun run
-// authorize` first to mint token.json). The model can request these; the
+// Gmail + Calendar read tools, authorized via the cached OAuth token (run `bun
+// run authorize` first to mint token.json). The model can request these; the
 // registry executes them and the loop feeds results back for summarizing.
-const gmail = createGmailApi(loadAuthorizedClient());
-const registry = createToolRegistry([searchEmailsTool(gmail), readEmailTool(gmail)]);
+const auth = loadAuthorizedClient();
+const gmail = createGmailApi(auth);
+const calendar = createCalendarApi(auth);
+const registry = createToolRegistry([
+  searchEmailsTool(gmail),
+  readEmailTool(gmail),
+  listEventsTool(calendar),
+  findFreeTimeTool(calendar),
+]);
 const agent = createAgentLoop(provider, registry);
 
 const app = new App({

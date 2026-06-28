@@ -10,8 +10,9 @@ import { google } from "googleapis";
 export type GoogleOAuthClient = InstanceType<typeof google.auth.OAuth2>;
 
 /**
- * Google OAuth for the Gmail read tools. Read-only and nothing more — sending
- * email reuses bot #1's SMTP path, so this bot never holds a send/write scope.
+ * Google OAuth for the Gmail and Calendar tools. Gmail stays read-only —
+ * sending email reuses bot #1's SMTP path, so this bot never holds a Gmail
+ * send/write scope. Calendar uses `calendar.events` (read now, create later).
  *
  * The flow uses two gitignored files in the project root:
  *   - `credentials.json` — the OAuth client downloaded from Google Cloud.
@@ -20,7 +21,10 @@ export type GoogleOAuthClient = InstanceType<typeof google.auth.OAuth2>;
  * Note: in Google's "Testing" consent mode the refresh token expires after
  * ~7 days, so re-run `bun run authorize` before a demo.
  */
-export const GMAIL_READONLY_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"];
+export const GOOGLE_SCOPES = [
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/calendar.events",
+];
 
 interface OAuthClientConfig {
   client_id: string;

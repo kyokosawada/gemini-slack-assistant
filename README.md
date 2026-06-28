@@ -36,10 +36,11 @@ tool-using agent.
 
 See the [PRD (issue #1)](https://github.com/kyokosawada/gemini-slack-assistant/issues/1) for permissions, setup, and architecture rationale.
 
-## Gmail access (one-time setup)
+## Google access (one-time setup)
 
-The read tools use the Gmail API with the **`gmail.readonly`** scope only — sending
-will reuse SMTP later, so this bot never holds a write scope.
+The read tools use the Gmail and Calendar APIs with two scopes: **`gmail.readonly`**
+(Gmail stays read-only — sending will reuse SMTP later, so this bot never holds a
+Gmail write scope) and **`calendar.events`** (calendar read now, create later).
 
 1. In Google Cloud, create an OAuth client (consent screen in **Testing** mode,
    yourself as the sole test user) and download it as `credentials.json` in the
