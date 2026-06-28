@@ -12,10 +12,12 @@
   },
   "dependencies": {
     "@google/genai": "^2.10.0",
-    "@slack/bolt": "^4.7.3"
+    "@slack/bolt": "^4.7.3",
+    "nodemailer": "^9.0.1"
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/nodemailer": "^8.0.1",
     "typescript": "^5"
   }
 }
