@@ -1,0 +1,23 @@
+# dependencies
+/node_modules
+
+# build output
+/dist
+/build
+
+# env / secrets — never commit
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+
+# local OAuth token cache
+/.tokens
+token.json
+credentials.json
