@@ -18,11 +18,11 @@ describe("renderReply", () => {
     expect(renderReply({ kind: "text", text: "hello" })).toEqual({ text: "hello" });
   });
 
-  it("renders a confirm reply as a Block Kit preview carrying the key", () => {
+  it("renders an email confirm reply as a Block Kit preview carrying the key", () => {
     const reply: AgentReply = {
       kind: "confirm",
       key: "pending-1",
-      draft: { to: "jane@acme.com", subject: "Hi", body: "hey" },
+      preview: { kind: "email", to: "jane@acme.com", subject: "Hi", body: "hey" },
     };
 
     const msg = renderReply(reply);
@@ -33,12 +33,34 @@ describe("renderReply", () => {
     expect(json).toContain("pending-1");
     expect(msg.text).toContain("jane@acme.com"); // fallback text for notifications
   });
+
+  it("renders an event confirm reply as a Block Kit preview carrying the key", () => {
+    const reply: AgentReply = {
+      kind: "confirm",
+      key: "pending-2",
+      preview: {
+        kind: "event",
+        title: "Intro call",
+        start: "2026-07-02T14:00:00Z",
+        durationMin: 30,
+        attendees: ["jane@acme.com"],
+      },
+    };
+
+    const msg = renderReply(reply);
+
+    expect(msg.blocks).toBeDefined();
+    const json = JSON.stringify(msg.blocks);
+    expect(json).toContain("Intro call");
+    expect(json).toContain("pending-2");
+    expect(msg.text).toContain("Intro call"); // fallback text for notifications
+  });
 });
 
 describe("handleIncomingMessage", () => {
   it("posts the rendered text reply", async () => {
     const { said, say } = collectSay();
-    const respond: Responder = async () => ({ kind: "text", text: "LOOP reply" });
+    const respond: Responder = async () => [{ kind: "text", text: "LOOP reply" }];
 
     await handleIncomingMessage({ text: "hello" }, say, respond);
 
@@ -50,7 +72,7 @@ describe("handleIncomingMessage", () => {
     const seen: string[] = [];
     const respond: Responder = async (t) => {
       seen.push(t);
-      return { kind: "text", text: "ok" };
+      return [{ kind: "text", text: "ok" }];
     };
 
     await handleIncomingMessage({ text: "<@U07ABC123> book a meeting" }, say, respond);
@@ -60,11 +82,13 @@ describe("handleIncomingMessage", () => {
 
   it("posts a Block Kit preview for a confirm reply", async () => {
     const { said, say } = collectSay();
-    const respond: Responder = async () => ({
-      kind: "confirm",
-      key: "pending-1",
-      draft: { to: "jane@acme.com", subject: "Hi", body: "hey" },
-    });
+    const respond: Responder = async () => [
+      {
+        kind: "confirm",
+        key: "pending-1",
+        preview: { kind: "email", to: "jane@acme.com", subject: "Hi", body: "hey" },
+      },
+    ];
 
     await handleIncomingMessage({ text: "email jane" }, say, respond);
 
@@ -73,12 +97,34 @@ describe("handleIncomingMessage", () => {
     expect(JSON.stringify(said[0]!.blocks)).toContain("pending-1");
   });
 
+  it("posts one preview per proposal for a multi-step reply (story 17)", async () => {
+    const { said, say } = collectSay();
+    const respond: Responder = async () => [
+      {
+        kind: "confirm",
+        key: "pending-1",
+        preview: { kind: "email", to: "jane@acme.com", subject: "Re", body: "Thursday works." },
+      },
+      {
+        kind: "confirm",
+        key: "pending-2",
+        preview: { kind: "event", title: "Intro", start: "2026-07-02T14:00:00Z", durationMin: 30, attendees: [] },
+      },
+    ];
+
+    await handleIncomingMessage({ text: "reply to jane and book thursday" }, say, respond);
+
+    expect(said).toHaveLength(2); // a separate Slack message for each confirmation
+    expect(JSON.stringify(said[0]!.blocks)).toContain("pending-1");
+    expect(JSON.stringify(said[1]!.blocks)).toContain("pending-2");
+  });
+
   it("nudges on an empty body without calling the responder", async () => {
     const { said, say } = collectSay();
     let called = false;
     const respond: Responder = async () => {
       called = true;
-      return { kind: "text", text: "x" };
+      return [{ kind: "text", text: "x" }];
     };
 
     await handleIncomingMessage({ text: "<@U07ABC123>" }, say, respond);

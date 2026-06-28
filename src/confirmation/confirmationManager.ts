@@ -1,27 +1,37 @@
 import type { EmailDraft } from "../email/sender";
+import type { EventDraft } from "../calendar/booker";
+
+/**
+ * What a pending action shows the user — an email draft or an event proposal,
+ * tagged with `kind` so the Slack layer renders the right preview and the right
+ * receipt. The manager itself never inspects it; it just hands it back on
+ * confirm. Email drafts predate the union, so the `kind` tag is grafted on here
+ * rather than baked into {@link EmailDraft} (the email sender's own domain type).
+ */
+export type Preview = ({ kind: "email" } & EmailDraft) | EventDraft;
 
 /**
  * Confirmation manager — gates irreversible actions (see PRD).
  *
- * `send_email` (and later `create_event`) do not execute on the model's
- * request. The bot posts a Block Kit preview with Send/Cancel buttons and
- * records a pending action here; the action runs only when the Send button
- * event fires (`confirm`); Cancel discards it. The manager is deliberately
- * action-agnostic — it stores a preview to render and an `execute` thunk to
- * run, so the same gate serves email today and calendar events tomorrow.
+ * `send_email` and `create_event` do not execute on the model's request. The
+ * bot posts a Block Kit preview with Confirm/Cancel buttons and records a
+ * pending action here; the action runs only when the Confirm button event fires
+ * (`confirm`); Cancel discards it. The manager is deliberately action-agnostic —
+ * it stores a {@link Preview} to render and an `execute` thunk to run, so the
+ * same gate serves email and calendar events alike.
  */
 export interface PendingAction {
   /** What to show the user in the preview (rendered by the Slack layer). */
-  preview: EmailDraft;
+  preview: Preview;
   /** The irreversible work, run only on confirm. */
   execute: () => Promise<void>;
 }
 
-/** What happened when the Send button fired. */
+/** What happened when the Confirm button fired. */
 export type ConfirmOutcome =
-  | { status: "executed"; preview: EmailDraft }
+  | { status: "executed"; preview: Preview }
   | { status: "not_found" }
-  | { status: "failed"; preview: EmailDraft; error: string };
+  | { status: "failed"; preview: Preview; error: string };
 
 export interface ConfirmationManager {
   readonly pendingCount: number;

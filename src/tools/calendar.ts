@@ -2,10 +2,11 @@ import type { Tool } from "./registry";
 
 /**
  * The slice of the googleapis Calendar client this bot uses: `events.list` for
- * reading the schedule and `freebusy.query` for finding open slots. The real
- * client (`google.calendar({ version: "v3", auth })`) satisfies this shape, and
- * tests pass a fake — so the tools are exercised against mocked Calendar
- * responses without a network or real credentials.
+ * reading the schedule, `freebusy.query` for finding open slots, and
+ * `events.insert` for the gated `create_event`. The real client
+ * (`google.calendar({ version: "v3", auth })`) satisfies this shape, and tests
+ * pass a fake — so the tools are exercised against mocked Calendar responses
+ * without a network or real credentials.
  */
 export interface CalendarApi {
   events: {
@@ -17,12 +18,24 @@ export interface CalendarApi {
       orderBy?: string;
       maxResults?: number;
     }): Promise<{ data: CalendarEventsListResponse }>;
+    insert(params: {
+      calendarId: string;
+      requestBody: CalendarEventInput;
+    }): Promise<{ data: CalendarEvent }>;
   };
   freebusy: {
     query(params: {
       requestBody: { timeMin: string; timeMax: string; items: Array<{ id: string }> };
     }): Promise<{ data: FreeBusyResponse }>;
   };
+}
+
+/** The event body sent to `events.insert` — the bot only ever creates timed events. */
+export interface CalendarEventInput {
+  summary: string;
+  start: { dateTime: string };
+  end: { dateTime: string };
+  attendees: Array<{ email: string }>;
 }
 
 export interface CalendarEventTime {

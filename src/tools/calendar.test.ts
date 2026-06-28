@@ -31,6 +31,8 @@ function fakeCalendar(handlers: {
         listCalls.push(params);
         return { data: handlers.list?.(params) ?? {} };
       },
+      // The read-tool tests never insert; this keeps the fake a full CalendarApi.
+      insert: async () => ({ data: {} }),
     },
     freebusy: {
       query: async (params) => {

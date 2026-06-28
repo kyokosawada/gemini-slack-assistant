@@ -12,6 +12,7 @@ export function createCalendarApi(auth: GoogleOAuthClient): CalendarApi {
   return {
     events: {
       list: (params) => calendar.events.list(params),
+      insert: (params) => calendar.events.insert(params),
     },
     freebusy: {
       query: (params) => calendar.freebusy.query(params),

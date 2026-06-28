@@ -11,6 +11,7 @@ import { searchEmailsTool, readEmailTool } from "./tools/gmail";
 import { listEventsTool, findFreeTimeTool } from "./tools/calendar";
 import { createConfirmationManager } from "./confirmation/confirmationManager";
 import { createEmailSender } from "./email/sender";
+import { createEventBooker } from "./calendar/booker";
 import { CONFIRM_ACTION_ID, CANCEL_ACTION_ID } from "./slack/sendPreview";
 
 /**
@@ -36,13 +37,16 @@ const registry = createToolRegistry([
   findFreeTimeTool(calendar),
 ]);
 
-// Gated sending: send_email is parked here and only runs on a Send click.
+// Gated actions: send_email and create_event are parked here and only run on a
+// Confirm click. The booker reuses the same authorized Calendar client as the
+// read tools (the `calendar.events` scope already covers creating events).
 const confirmation = createConfirmationManager();
 const emailSender = createEmailSender({
   user: requireEnv("GMAIL_USER"),
   appPassword: requireEnv("GMAIL_APP_PASSWORD"),
 });
-const agent = createAgentLoop(provider, registry, confirmation, emailSender);
+const booker = createEventBooker(calendar);
+const agent = createAgentLoop(provider, registry, confirmation, emailSender, booker);
 
 const app = new App({
   token: requireEnv("SLACK_BOT_TOKEN"),
@@ -80,14 +84,19 @@ app.action(CONFIRM_ACTION_ID, async ({ ack, action, respond }) => {
 
   const outcome = await confirmation.confirm(action.value);
   if (outcome.status === "executed") {
-    await respond({ replace_original: true, text: `✅ Sent to ${outcome.preview.to}.` });
+    const receipt =
+      outcome.preview.kind === "email"
+        ? `✅ Sent to ${outcome.preview.to}.`
+        : `📅 Booked "${outcome.preview.title}" for ${outcome.preview.start}.`;
+    await respond({ replace_original: true, text: receipt });
   } else if (outcome.status === "failed") {
+    const noun = outcome.preview.kind === "email" ? "send" : "book";
     await respond({
       replace_original: false,
-      text: `⚠️ Couldn't send: ${outcome.error}. The draft is still here — click *Send* to retry.`,
+      text: `⚠️ Couldn't ${noun}: ${outcome.error}. It's still here — click *Confirm* to retry.`,
     });
   } else {
-    await respond({ replace_original: true, text: "This draft has expired — please ask me again." });
+    await respond({ replace_original: true, text: "This has expired — please ask me again." });
   }
 });
 

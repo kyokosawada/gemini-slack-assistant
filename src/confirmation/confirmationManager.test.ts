@@ -1,8 +1,7 @@
 import { describe, it, expect } from "bun:test";
-import { createConfirmationManager } from "./confirmationManager";
-import type { EmailDraft } from "../email/sender";
+import { createConfirmationManager, type Preview } from "./confirmationManager";
 
-const draft: EmailDraft = { to: "jane@acme.com", subject: "Hi", body: "hey" };
+const draft: Preview = { kind: "email", to: "jane@acme.com", subject: "Hi", body: "hey" };
 
 describe("createConfirmationManager", () => {
   it("parks a proposed action without executing it", () => {
@@ -78,10 +77,10 @@ describe("createConfirmationManager", () => {
 
   it("replaces a parked draft on update, then confirms the updated one", async () => {
     const manager = createConfirmationManager();
-    const sent: EmailDraft[] = [];
+    const sent: Preview[] = [];
     const key = manager.propose({ preview: draft, execute: async () => void sent.push(draft) });
 
-    const shorter: EmailDraft = { to: "jane@acme.com", subject: "Hi", body: "hey (shorter)" };
+    const shorter: Preview = { kind: "email", to: "jane@acme.com", subject: "Hi", body: "hey (shorter)" };
     const updated = manager.update(key, {
       preview: shorter,
       execute: async () => void sent.push(shorter),
