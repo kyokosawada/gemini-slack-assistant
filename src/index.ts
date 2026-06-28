@@ -1,31 +1,45 @@
 import { App } from "@slack/bolt";
 import { requireEnv } from "./env";
 import { handleIncomingMessage } from "./slack/messageHandler";
+import { createAgentLoop } from "./agent/agentLoop";
+import { createGeminiProvider } from "./model/gemini";
 
 /**
- * Tracer-bullet entry point (issue #2): a single always-on local process that
- * connects to Slack over Socket Mode (no public URL) and echoes replies to
- * @mentions and DMs. Gemini, tools, and confirmations land in later slices —
- * see the stubs under src/agent, src/model, src/tools, src/confirmation.
+ * Entry point (issue #3): a single always-on local process that connects to
+ * Slack over Socket Mode and answers @mentions and DMs with the agent loop,
+ * which reasons via Gemini behind the swappable provider interface. Per-thread
+ * conversation context is kept in memory by the agent loop; here we just map
+ * each Slack surface to a stable thread key.
  */
+const provider = createGeminiProvider(requireEnv("GEMINI_API_KEY"));
+const agent = createAgentLoop(provider);
+
 const app = new App({
   token: requireEnv("SLACK_BOT_TOKEN"),
   appToken: requireEnv("SLACK_APP_TOKEN"),
   socketMode: true,
 });
 
-// @mention in a channel → reply in the same thread.
+// @mention in a channel → reply in the same thread; context keyed per thread.
 app.event("app_mention", async ({ event, say }) => {
-  await handleIncomingMessage({ text: event.text }, (text) =>
-    say({ text, thread_ts: event.thread_ts ?? event.ts }),
+  const threadKey = `${event.channel}:${event.thread_ts ?? event.ts}`;
+  await handleIncomingMessage(
+    { text: event.text },
+    (text) => say({ text, thread_ts: event.thread_ts ?? event.ts }),
+    (text) => agent.respond(threadKey, text),
   );
 });
 
-// Direct message → reply in the DM. Only `message.im` is subscribed, so this
-// fires for DMs; ignore edits/deletions/joins and the bot's own messages.
+// Direct message → reply in the DM; context keyed per DM channel. Only
+// `message.im` is subscribed; ignore edits/deletions/joins and the bot's own.
 app.message(async ({ message, say }) => {
   if (message.subtype !== undefined) return;
-  await handleIncomingMessage({ text: message.text }, (text) => say(text));
+  const threadKey = message.channel;
+  await handleIncomingMessage(
+    { text: message.text },
+    (text) => say(text),
+    (text) => agent.respond(threadKey, text),
+  );
 });
 
 await app.start();
