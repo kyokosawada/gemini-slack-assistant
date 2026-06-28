@@ -35,3 +35,19 @@ tool-using agent.
 - Calendar: `list_events`, `find_free_time`, `create_event` *(confirm)*
 
 See the [PRD (issue #1)](https://github.com/kyokosawada/gemini-slack-assistant/issues/1) for permissions, setup, and architecture rationale.
+
+## Google access (one-time setup)
+
+The read tools use the Gmail and Calendar APIs with two scopes: **`gmail.readonly`**
+(Gmail stays read-only — sending will reuse SMTP later, so this bot never holds a
+Gmail write scope) and **`calendar.events`** (calendar read now, create later).
+
+1. In Google Cloud, create an OAuth client (consent screen in **Testing** mode,
+   yourself as the sole test user) and download it as `credentials.json` in the
+   project root.
+2. Run `bun run authorize`, open the printed URL, approve, and paste the code
+   back. This caches `token.json`.
+3. `bun start` as usual.
+
+Both `credentials.json` and `token.json` are gitignored. In Testing mode the
+refresh token expires after ~7 days, so re-run `bun run authorize` before a demo.

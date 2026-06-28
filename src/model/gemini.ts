@@ -21,10 +21,7 @@ export function createGeminiProvider(
   return {
     name: `gemini:${model}`,
     async generate(conversation: Message[], tools: ToolDefinition[]): Promise<ModelReply> {
-      const contents = conversation.map((m) => ({
-        role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: m.text }],
-      }));
+      const contents = conversation.map(toContent);
 
       const config =
         tools.length > 0
@@ -32,16 +29,27 @@ export function createGeminiProvider(
           : undefined;
 
       const response = await ai.models.generateContent({ model, contents, config });
-
-      const calls = response.functionCalls;
-      if (calls && calls.length > 0) {
-        const call = calls[0]!;
-        return { kind: "tool_call", call: { name: call.name ?? "", args: call.args ?? {} } };
-      }
-
-      return { kind: "text", text: response.text ?? "" };
+      return toModelReply(response);
     },
   };
+}
+
+/**
+ * Map a Gemini response to our {@link ModelReply}: a predicted function call
+ * surfaces as a `tool_call` (taking the first call), otherwise the text answer
+ * is returned. Pure, so the wire-format contract is unit-testable without a
+ * network round-trip.
+ */
+export function toModelReply(response: {
+  functionCalls?: Array<{ name?: string | null; args?: Record<string, unknown> }> | null;
+  text?: string | null;
+}): ModelReply {
+  const calls = response.functionCalls;
+  if (calls && calls.length > 0) {
+    const call = calls[0]!;
+    return { kind: "tool_call", call: { name: call.name ?? "", args: call.args ?? {} } };
+  }
+  return { kind: "text", text: response.text ?? "" };
 }
 
 function toFunctionDeclaration(tool: ToolDefinition) {
@@ -50,4 +58,26 @@ function toFunctionDeclaration(tool: ToolDefinition) {
     description: tool.description,
     parametersJsonSchema: tool.parameters,
   };
+}
+
+/**
+ * Map one of our conversation turns to a Gemini `Content`. Our `assistant`
+ * becomes Gemini's `model`; a `tool_call` becomes a `functionCall` part on a
+ * model turn; a `tool_result` becomes a `functionResponse` part on a user turn
+ * (the SDK reads the tool output from the `output` key).
+ */
+export function toContent(m: Message) {
+  switch (m.role) {
+    case "user":
+      return { role: "user", parts: [{ text: m.text }] };
+    case "assistant":
+      return { role: "model", parts: [{ text: m.text }] };
+    case "tool_call":
+      return { role: "model", parts: [{ functionCall: { name: m.call.name, args: m.call.args } }] };
+    case "tool_result":
+      return {
+        role: "user",
+        parts: [{ functionResponse: { name: m.name, response: { output: m.result } } }],
+      };
+  }
 }

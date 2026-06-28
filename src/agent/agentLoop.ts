@@ -1,14 +1,22 @@
 import type { Message, ModelProvider, ModelReply, ToolDefinition } from "../model/provider";
+import type { ToolRegistry } from "../tools/registry";
 import type { ConfirmationManager } from "../confirmation/confirmationManager";
 import type { EmailDraft, EmailSender } from "../email/sender";
 
 const PROVIDER_ERROR = "⚠️ Sorry — I couldn't reach the model just now. Please try again.";
-const NO_TOOLS_YET = "⚠️ I can't use that tool yet — Gmail search and Calendar are coming in a later update.";
+const ITERATION_LIMIT_ERROR =
+  "⚠️ Sorry — I got stuck working on that and stopped. Please try rephrasing your request.";
+const toolError = (detail: string) =>
+  `⚠️ Sorry — a tool failed (${detail}). Nothing was completed, so please try again or check my access.`;
+
+/** Safety net so a model that keeps calling tools can never loop forever. */
+const MAX_ITERATIONS = 8;
 
 /**
- * The one tool wired in this slice. Sending is gated: when the model calls this,
- * the loop parks a confirmation rather than sending. Read tools (search_emails,
- * etc.) arrive with the tool registry in a later slice.
+ * The one *gated* tool. Unlike the registry's read tools, sending does not
+ * execute on the model's request: when the model calls this, the loop parks a
+ * confirmation and returns a preview for the Slack Send/Cancel buttons. Its
+ * definition is advertised alongside the registry's so the model can call it.
  */
 export const SEND_EMAIL_TOOL: ToolDefinition = {
   name: "send_email",
@@ -41,13 +49,22 @@ export interface AgentLoop {
 /**
  * The reasoning module — the agent loop (see PRD).
  *
- * Sends the conversation (plus tool definitions) to the model through the
- * swappable provider and returns its reply. A `send_email` request is *gated*:
- * rather than sending, the loop parks a pending action with the confirmation
- * manager and returns a `confirm` reply for the Slack layer to preview.
+ * On each turn it sends the conversation plus the available tool definitions
+ * (the registry's read tools + the gated send_email) to the model. The model
+ * replies with a final text answer, a request to call a read tool (executed via
+ * the registry, result fed back, model re-invoked), or a `send_email` call —
+ * which is *gated*: the loop parks a pending action with the confirmation
+ * manager and returns a `confirm` reply for the Slack layer to preview, sending
+ * nothing until the Send button fires. A re-proposed send on the same thread
+ * edits the live draft in place.
+ *
+ * A failed turn (model unreachable, or a tool that errors) leaves the thread's
+ * history exactly as it was before the message, so the failure never poisons
+ * later turns and is never reported as a silent success.
  */
 export function createAgentLoop(
   provider: ModelProvider,
+  registry: ToolRegistry,
   confirmation: ConfirmationManager,
   emailSender: EmailSender,
 ): AgentLoop {
@@ -56,39 +73,60 @@ export function createAgentLoop(
   // The live pending send per thread, so an edit updates that preview in place.
   const activeSend = new Map<string, string>();
 
+  const tools = [...registry.definitions, SEND_EMAIL_TOOL];
+
   return {
     async respond(threadKey, text) {
       const history = conversations.get(threadKey) ?? [];
-      history.push({ role: "user", text });
       conversations.set(threadKey, history);
 
-      // Send an immutable snapshot so later turns don't mutate what was sent.
-      let reply: ModelReply;
-      try {
-        reply = await provider.generate([...history], [SEND_EMAIL_TOOL]);
-      } catch {
-        history.pop(); // a failed turn must not poison the thread's history
-        return { kind: "text", text: PROVIDER_ERROR };
+      // Where to rewind to if this turn fails, so history isn't poisoned.
+      const baseLength = history.length;
+      history.push({ role: "user", text });
+
+      for (let i = 0; i < MAX_ITERATIONS; i++) {
+        // Send an immutable snapshot so later turns don't mutate what was sent.
+        let reply: ModelReply;
+        try {
+          reply = await provider.generate([...history], tools);
+        } catch {
+          history.length = baseLength;
+          return { kind: "text", text: PROVIDER_ERROR };
+        }
+
+        if (reply.kind === "text") {
+          history.push({ role: "assistant", text: reply.text });
+          return { kind: "text", text: reply.text };
+        }
+
+        // Gated send: park a confirmation (or edit the live draft) and stop —
+        // nothing is sent until the Send button fires.
+        if (reply.call.name === SEND_EMAIL_TOOL.name) {
+          const draft = toDraft(reply.call.args);
+          const action = { preview: draft, execute: () => emailSender.send(draft) };
+          const existing = activeSend.get(threadKey);
+          const key =
+            existing && confirmation.update(existing, action)
+              ? existing
+              : confirmation.propose(action);
+          activeSend.set(threadKey, key);
+          // Record the proposed draft so a follow-up ("make it shorter") has context.
+          history.push({ role: "assistant", text: describeDraft(draft) });
+          return { kind: "confirm", key, draft };
+        }
+
+        // Read tool: record the request, run it via the registry, feed back.
+        history.push({ role: "tool_call", call: reply.call });
+        const outcome = await registry.execute(reply.call);
+        if (!outcome.ok) {
+          history.length = baseLength;
+          return { kind: "text", text: toolError(outcome.error) };
+        }
+        history.push({ role: "tool_result", name: reply.call.name, result: outcome.value });
       }
 
-      if (reply.kind === "tool_call" && reply.call.name === SEND_EMAIL_TOOL.name) {
-        const draft = toDraft(reply.call.args);
-        const action = { preview: draft, execute: () => emailSender.send(draft) };
-        // If this thread already has a live draft, edit it in place; else park anew.
-        const existing = activeSend.get(threadKey);
-        const key =
-          existing && confirmation.update(existing, action)
-            ? existing
-            : confirmation.propose(action);
-        activeSend.set(threadKey, key);
-        // Record the proposed draft so a follow-up ("make it shorter") has context.
-        history.push({ role: "assistant", text: describeDraft(draft) });
-        return { kind: "confirm", key, draft };
-      }
-
-      const replyText = reply.kind === "text" ? reply.text : NO_TOOLS_YET;
-      history.push({ role: "assistant", text: replyText });
-      return { kind: "text", text: replyText };
+      history.length = baseLength;
+      return { kind: "text", text: ITERATION_LIMIT_ERROR };
     },
   };
 }

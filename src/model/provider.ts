@@ -1,8 +1,13 @@
-/** A single turn in the conversation. */
-export interface Message {
-  role: "user" | "assistant";
-  text: string;
-}
+/**
+ * A single turn in the conversation. Plain `user`/`assistant` turns carry text;
+ * once tools enter the loop a turn may instead record the model's request to
+ * call a tool (`tool_call`) or the result the bot fed back (`tool_result`).
+ */
+export type Message =
+  | { role: "user"; text: string }
+  | { role: "assistant"; text: string }
+  | { role: "tool_call"; call: ToolCall }
+  | { role: "tool_result"; name: string; result: unknown };
 
 /**
  * A tool the model may call (Gmail/Calendar). The set is empty until issue #4

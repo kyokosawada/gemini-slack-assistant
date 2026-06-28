@@ -3,6 +3,12 @@ import { requireEnv } from "./env";
 import { handleIncomingMessage } from "./slack/messageHandler";
 import { createAgentLoop } from "./agent/agentLoop";
 import { createGeminiProvider } from "./model/gemini";
+import { loadAuthorizedClient } from "./google/auth";
+import { createGmailApi } from "./google/gmailApi";
+import { createCalendarApi } from "./google/calendarApi";
+import { createToolRegistry } from "./tools/registry";
+import { searchEmailsTool, readEmailTool } from "./tools/gmail";
+import { listEventsTool, findFreeTimeTool } from "./tools/calendar";
 import { createConfirmationManager } from "./confirmation/confirmationManager";
 import { createEmailSender } from "./email/sender";
 import { CONFIRM_ACTION_ID, CANCEL_ACTION_ID } from "./slack/sendPreview";
@@ -10,17 +16,33 @@ import { CONFIRM_ACTION_ID, CANCEL_ACTION_ID } from "./slack/sendPreview";
 /**
  * Entry point: a single always-on local process that connects to Slack over
  * Socket Mode and answers @mentions and DMs with the agent loop (Gemini behind
- * the swappable provider). Irreversible sends are gated: the loop parks them in
- * the confirmation manager and the Slack Send/Cancel buttons resolve them here.
+ * the swappable provider). The model can call Gmail/Calendar read tools via the
+ * registry; irreversible sends are gated — the loop parks them in the
+ * confirmation manager and the Slack Send/Cancel buttons resolve them here.
  * Conversation and pending-confirmation state are in memory, keyed per thread.
  */
 const provider = createGeminiProvider(requireEnv("GEMINI_API_KEY"));
+
+// Gmail + Calendar read tools, authorized via the cached OAuth token (run `bun
+// run authorize` first to mint token.json). The model can request these; the
+// registry executes them and the loop feeds results back for summarizing.
+const auth = loadAuthorizedClient();
+const gmail = createGmailApi(auth);
+const calendar = createCalendarApi(auth);
+const registry = createToolRegistry([
+  searchEmailsTool(gmail),
+  readEmailTool(gmail),
+  listEventsTool(calendar),
+  findFreeTimeTool(calendar),
+]);
+
+// Gated sending: send_email is parked here and only runs on a Send click.
 const confirmation = createConfirmationManager();
 const emailSender = createEmailSender({
   user: requireEnv("GMAIL_USER"),
   appPassword: requireEnv("GMAIL_APP_PASSWORD"),
 });
-const agent = createAgentLoop(provider, confirmation, emailSender);
+const agent = createAgentLoop(provider, registry, confirmation, emailSender);
 
 const app = new App({
   token: requireEnv("SLACK_BOT_TOKEN"),
